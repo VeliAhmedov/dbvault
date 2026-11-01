@@ -1,0 +1,12 @@
+database:
+  type: postgres
+  host: localhost
+  port: 5433
+  name: testdb
+  username: default
+  # password come from configLoader env variable
+storage:
+  type: local
+  path: ./backups
+
+# this is structural example, real one is created by default with values

@@ -24,6 +24,7 @@
                 <transformer>
                   <mainClass>io.github.veliahmedov.dbvault.DbVaultCommand</mainClass>
                 </transformer>
+                <transformer />
               </transformers>
             </configuration>
           </execution>

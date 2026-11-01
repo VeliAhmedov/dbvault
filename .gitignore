@@ -43,3 +43,4 @@ build/
 *.log
 backups/
 .env
+dbvault.yml
