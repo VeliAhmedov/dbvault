@@ -1,12 +1,19 @@
+# Copy to dbvault.yml and adjust. Values like ${DB_USERNAME} are read from
+# your environment or from a .env file in the folder where you run dbvault.
+# so don't put real values there
 database:
-  type: postgres
-  host: localhost
-  port: 5433
+  type: postgres            # postgres | sqlite (sqlite planned)
   name: testdb
-  username: default
-  # password come from configLoader env variable
+  username: ${DB_USERNAME}
+  password: ${DB_PASSWORD}
+
+  # Option A: run pg_dump/psql inside a Docker container
+  container: postgres
+
+  # Option B: use pg_dump/psql installed on this machine (remove 'container')
+  # host: localhost
+  # port: 5433
+
 storage:
   type: local
   path: ./backups
-
-# this is structural example, real one is created by default with values
