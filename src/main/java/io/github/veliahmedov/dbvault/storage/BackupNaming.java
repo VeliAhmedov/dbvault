@@ -13,7 +13,7 @@ public class BackupNaming {
         //extract filename, remove last extension, replace non-safe chars with underscores, then format it according o formatter
         String base = Path.of(dbName).getFileName().toString().replaceAll("\\.[^.]+$", "");
         base = base.replaceAll("[^A-Za-z0-9_-]", "_");
-        return base + "-" + formatter.format(time) + ".sql.gz";
+        return base + "-" + formatter.format(time) + ".dump.gz";
     }
 }
 // example: testdb-2026-11-02T23-25-10.sql.gz

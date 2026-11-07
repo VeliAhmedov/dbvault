@@ -48,7 +48,7 @@ public class LocalStorageBackend implements StorageBackend {
     }
 
     @Override
-    public List<String> list(String key) throws IOException {   // get list of files in backup
+    public List<String> list() throws IOException {   // get list of files in backup
         try (Stream<Path> stream = Files.list(dir)) {
             return stream.filter(Files::isRegularFile)
                     .map(p -> p.getFileName().toString())

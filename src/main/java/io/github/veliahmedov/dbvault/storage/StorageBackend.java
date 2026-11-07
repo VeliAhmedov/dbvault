@@ -14,7 +14,7 @@ public interface StorageBackend {
     //delete backup
     void delete(String key) throws IOException;
     //list stored backups
-    List<String> list(String key) throws IOException;
+    List<String> list() throws IOException;
     // backup size in bytes
     long size(String key) throws IOException;
 }

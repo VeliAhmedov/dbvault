@@ -12,24 +12,24 @@ import java.util.Map;
 
 // this utility class let us execute command lines of databases from JAVA
 final class ProcessRunner {
-    private ProcessRunner() {
-    }
+    private ProcessRunner() {}
+    // remember:
+    // stderr - standard error (read error messages FROM process) -> p.getErrorStream()
+    // stdout - standard output stream (write data TO process) -> p.getOutputStream()
+    // stdin - standard input (read output FROM process) -> p.getInputStream()
 
     //Runs command, streams stdout into out, throws stderr text on non-zero exit
     // exp: commands - external cmd (pg_dump -U dbvault), env (PGPASSWORD = dbvault), out - where cmd output goes for processing(GZIP)
     static void streamTo(List<String> commands, Map<String, String> env, OutputStream out) throws IOException {
         ProcessBuilder pb = new ProcessBuilder(commands);  //List<String> command = List.of("pg_dump","-U","dbvault","-d","testdb"); -> pg_dump -U dbvault -d testdb
-        pb.environment().putAll(env);                      //alongside commands put needed env variables too for exe,
+        pb.environment().putAll(env);                      //alongside commands put needed env variables too for exe
+        // start pg_dump
         Process p;                                         // process used for exe native OS process to manage and interact with running app
         try {
             p = pb.start();     //launch program, return process object that represent running program, with this java can communicate with external program
         } catch (IOException e) {
             throw new DbVaultException("Can't run " + commands.getFirst(), e);  // getFirst return exe name such as pg_dumb of PostgreSQL for backup
         }
-        // stderr - standard error (read error messages FROM process) -> p.getErrorStream()
-        // stdout - standard output stream (write data TO process) -> p.getOutputStream()
-        // stdin - standard input (read output FROM process) -> p.getInputStream()
-
         //in-memory output stream for capturing error message, stderr collects these bytes for use
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         // we need to read both stdout and stderr, which is why additional virtual thread is used for processing error
@@ -42,7 +42,7 @@ final class ProcessRunner {
 
         try {
             //while error is processed, this read process's output and writes to outputStream
-            try(InputStream in = p.getInputStream()) {
+            try (InputStream in = p.getInputStream()) {
                 in.transferTo(out);
             }
             int code = p.waitFor();   // wait until process finish and return ext code
@@ -58,12 +58,59 @@ final class ProcessRunner {
             if (p.isAlive()) p.destroyForcibly();
         }
     }
+
+    // same as streamTo but it takes from input for restoration of dump.sql file
+    static void streamFrom(List<String> commands, Map<String, String> env, InputStream data) throws IOException {
+        ProcessBuilder pb = new ProcessBuilder(commands);
+        pb.environment().putAll(env);
+        // merge stderr into stdout because during restore stdout (send to) isn't backup, it is stdin (take from)
+        pb.redirectErrorStream(true);
+        // starts pg_restore
+        Process p;
+        try {
+            p = pb.start();
+        } catch (IOException e) {
+            throw new DbVaultException("Can't run " + commands.getFirst(), e);
+        }
+        // process can still produce data, if java doesn't read output, pipe buffer can fill up, so we need to monitor
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        Thread reader = Thread.startVirtualThread(() -> {
+            try {
+                p.getInputStream().transferTo(output);
+            } catch (IOException ignored) {
+            }
+        });
+        //sending backup data to PostgreSQL (java -> process)
+        IOException writeError = null;
+        try {
+            try (OutputStream stdin = p.getOutputStream()) {
+                data.transferTo(stdin); //send backup bytes into pg_restore
+            } catch (IOException e) {
+                writeError = e;   // process may have exited early; the exit code explains why
+            }
+            // wait for pg-restore finishes and virtual thread stops
+            int code = p.waitFor();
+            reader.join();
+            // 0 success, 1 failure
+            if (code != 0) {
+                throw new DbVaultException(commands.getFirst() + " failed (exit " + code + "): "
+                        + output.toString(StandardCharsets.UTF_8).trim());
+            }
+            if (writeError != null) throw writeError;   // e.g. corrupt gzip
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new DbVaultException("Interrupted while running " + commands.getFirst(), e);
+        } finally {
+            if (p.isAlive()) p.destroyForcibly();
+        }
+    }
+
     // convenience method for when we want return stdout as text, used for SQL results and connection checks, small ops
     static String capture(List<String> command, Map<String, String> env) {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();   //in-memory  buffer
         try {
             streamTo(command, env, buffer);                           // exe and collect stdout
-        }catch (IOException e) {
+        } catch (IOException e) {
             throw new DbVaultException("Failed to run " + command.getFirst(), e);
         }
         return buffer.toString(StandardCharsets.UTF_8);               // convert byte to string and return it
