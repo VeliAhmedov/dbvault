@@ -30,7 +30,7 @@ import java.util.zip.GZIPInputStream;
 )
 public class RestoreCommand implements Callable<Integer> {
 
-    private static final Logger log = LoggerFactory.getLogger(RestoreCommand.class);
+    private static final Logger LOG = LoggerFactory.getLogger(RestoreCommand.class);
 
     // Picocli positional argument, index 0 means first  value after restore -> dbvault restore testdb.dump.gz assign to private String backup;
     @Parameters(index = "0", paramLabel = "<backup>", description = "Backup file name ( testdb-2026-11-04T23-32-46.dump.gz)")
@@ -68,11 +68,11 @@ public class RestoreCommand implements Callable<Integer> {
 
         // if --yes and not confirmed then don't skip it
         if (!yes && !confirm(db)){
-            log.info("Restore cancelled");
+            LOG.info("Restore cancelled");
             return 1;
         }
         // log restore process
-        log.info("Restore started: {} -> '{}'{}", backup, db,
+        LOG.info("Restore started: {} -> '{}'{}", backup, db,
                 tables.isEmpty() ? "" : " (tables: " + tables + ")");
         Instant start = Instant.now();
 
@@ -81,7 +81,7 @@ public class RestoreCommand implements Callable<Integer> {
         try (InputStream in = new GZIPInputStream(storage.download(backup))) {
             adapter.restore(in, tables);
         }
-        log.info("Restore finished: {} ms | SUCCESS", Duration.between(start, Instant.now()).toMillis());
+        LOG.info("Restore finished: {} ms | SUCCESS", Duration.between(start, Instant.now()).toMillis());
         return 0;
     }
 

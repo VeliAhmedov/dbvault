@@ -5,9 +5,7 @@ import io.github.veliahmedov.dbvault.config.DbVaultConfig;
 import io.github.veliahmedov.dbvault.db.AdapterFactory;
 import io.github.veliahmedov.dbvault.db.DatabaseAdapter;
 import io.github.veliahmedov.dbvault.exception.DbVaultException;
-import io.github.veliahmedov.dbvault.storage.BackupNaming;
-import io.github.veliahmedov.dbvault.storage.StorageBackend;
-import io.github.veliahmedov.dbvault.storage.StorageFactory;
+import io.github.veliahmedov.dbvault.storage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Option;
@@ -16,6 +14,8 @@ import picocli.CommandLine.Command;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Path;
+import java.security.DigestOutputStream;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -30,7 +30,7 @@ import java.util.zip.GZIPOutputStream;
 public class BackupCommand implements Callable<Integer> {
 
     //log factory for logging results, info, warning and errors for all
-    private static final Logger log = LoggerFactory.getLogger(BackupCommand.class);
+    private static final Logger LOG = LoggerFactory.getLogger(BackupCommand.class);
 
     // @Option Picocli annotation to accept commands named -c and --config (-c is shortened --config)
     // (java -jar dbvault.jar backup -c dbvault.example.yml), recognize c, read YAML, convert to path
@@ -49,31 +49,38 @@ public class BackupCommand implements Callable<Integer> {
         adapter.testConnection();
         //generate backup filename, log it
         String backupFilename = BackupNaming.fileName(config.database().name(), LocalDateTime.now());
-        log.info("Backup Started: using {} adapter for database '{}'", config.database().type(), config.database().name());
+        LOG.info("Backup Started: using {} adapter for database '{}'", config.database().type(), config.database().name());
         Instant start = Instant.now();
 
-        //actual backup and compression ops
-        //pg_dump (Produces PostgreSQL data) ->  p.getInputStream() (Java reads stdout) ->  out (GZIPOutputStream compresses it) ->  Backup file
-        // ask storage backend to open destination file for write, return outStream, wrap it with GZIP and write backup to given output stream
-        try (OutputStream out = new GZIPOutputStream(storage.openWrite(backupFilename))) {
+        //hashing engine for SHA-256 calculator
+        MessageDigest digest = Checksums.sha256();
+        //actual backup, compression ops and hash checksum
+        //pg_dump (Produces PostgreSQL data) ->  p.getInputStream() ->  out (GZIPOutputStream compresses it) -> digest (hash compressed bytes) ->  Backup file
+        try (OutputStream out = new GZIPOutputStream(
+                new DigestOutputStream(storage.openWrite(backupFilename), digest))) {   //calculate hash while writing data
             adapter.backup(out);
         } catch (IOException | RuntimeException e) {
             try {
                 // if backup fails, delete incomplete file to prevent incomplete posing as success and to retry
                 storage.delete(backupFilename);
             } catch (IOException ex) {
-                log.warn("Could not remove partial file {}", backupFilename);
+                LOG.warn("Could not remove partial file {}", backupFilename);
             }
-            // if it was our own ex (inside runtimeexception) then don't wrap it up, throw itself
+            // if it was our own ex (inside runtime exception) then don't wrap it up, throw itself
             if (e instanceof DbVaultException dbv) throw dbv;
             throw new DbVaultException("Backup failed: " + e.getMessage(), e);
         }
         try {
-            log.info("Backup finished: {} | {} bytes | {} ms | SUCCESS",
-                    backupFilename, storage.size(backupFilename),
-                    Duration.between(start, Instant.now()).toMillis());
+            //save checksum metadata, you will use it for restore to compare in case of corruption
+            long size = storage.size(backupFilename);
+            String sha = Checksums.hex(digest);
+            BackupMetadataStore.write(storage,
+                    new BackupMetadata(backupFilename, config.database().name(), Instant.now().toString(), size, sha));
+
+            LOG.info("Backup finished: {} | {} bytes | {} ms | sha256 {}... | SUCCESS",
+                    backupFilename, size, Duration.between(start, Instant.now()).toMillis(), sha.substring(0, 12));
         } catch (IOException ioe) {
-            throw new DbVaultException("Backup written but size check failed", ioe);
+            throw new DbVaultException("Backup written but checksum file failed", ioe);
         }
         return 0;
     }
