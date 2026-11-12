@@ -38,10 +38,14 @@ public class BackupCommand implements Callable<Integer> {
     // if user don't provide -c, Picocli use dbvault.yml so cmd above is same as (java -jar dbvault.jar backup)
     private Path configFilePath;
 
+    // instead of hardcoding storage type like s3 or local, write just: dbvault backup -s s3 | dbvault backup --storage s3
+    @Option(names = {"-s", "--storage"}, description = "Storage name from the config file, default: local")
+    private String storageName;
+
     //callable executed because need to return result as CLI command should return code for success (0) and failure (1)
     @Override
     public Integer call() {
-        DbVaultConfig config = ConfigLoader.load(configFilePath);  //loads dbvault.yml YAML to Object to it
+        DbVaultConfig config = ConfigLoader.load(configFilePath, storageName);  //loads dbvault.yml YAML to Object to it
         DatabaseAdapter adapter = AdapterFactory.create(config.database());  // with general info it creates specialized adapter for given DB
         StorageBackend storage = StorageFactory.create(config.storage());    // with general info it creates specialized storage for given DB backup
 

@@ -31,10 +31,14 @@ public class VerifyCommand implements Callable<Integer>{
     @Option(names = {"-c", "--config"}, defaultValue = "dbvault.yml", description = "Path to config file")
     private Path configFilePath;
 
+    // instead of hardcoding storage type like s3 or local, write just: dbvault backup -s s3 | dbvault backup --storage s3
+    @Option(names = {"-s", "--storage"}, description = "Storage name from the config file, default: local")
+    private String storageName;
+
     @Override
     public Integer call() throws IOException {
         //loading config and storage
-        DbVaultConfig config = ConfigLoader.load(configFilePath);
+        DbVaultConfig config = ConfigLoader.load(configFilePath, storageName);
         StorageBackend storage = StorageFactory.create(config.storage());
         //check whether backup exists and metadata exists (testdb.dump.gz.json)
         List<String> files = storage.list();

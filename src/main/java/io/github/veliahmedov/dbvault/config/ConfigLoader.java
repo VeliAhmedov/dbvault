@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import io.github.veliahmedov.dbvault.exception.DbVaultException;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +15,10 @@ import java.util.regex.Pattern;
 
 //this component read env var, replace placeholder in yaml, return fully populated java configuration objects
 public final class ConfigLoader {
+
+    // structure of yml file, Jackson reads, used map because number and name of storage (s3, local) can change in cli to be more flexible
+    // RawConfig(database,"local", Map.of("s3", localStorageConfig));, you can configure yourself in cmd
+    private record RawConfig(DatabaseConfig database, String defaultStorage, Map<String, StorageConfig> storages) {}
 
     // location of .env files and placeholders inside yaml file
     private static final Path DOTENV = Path.of(".env");
@@ -29,21 +34,41 @@ public final class ConfigLoader {
     private ConfigLoader() {}
 
     //load configuration from yaml to records as objects
-    public static DbVaultConfig load(Path file) {
+    public static DbVaultConfig load(Path file, String storageName) {
         if (!Files.exists(file)) {
             throw new DbVaultException("Config file does not exist: " + file);
         }
-        DbVaultConfig config;
+        RawConfig rawConfig;
         try {
             //deserialize, extract info from given YAML file to java object
-            config = MAPPER.readValue(file.toFile(), DbVaultConfig.class);
+            rawConfig = MAPPER.readValue(file.toFile(), RawConfig.class);
         }catch (IOException e) {
             throw new DbVaultException("Failed to load config file: " + file, e);
         }
-        if (config.database() == null || config.database().type() == null) {
+        if (rawConfig.database() == null || rawConfig.database().type() == null) {
             throw new DbVaultException("Config database or database type not found");
         }
-        return resolveAll(config, loadVariables());
+        Map<String, String> vars = loadVariables();
+        return new DbVaultConfig(
+                resolveDatabase(rawConfig.database, vars),
+                resolveStorage(pick(rawConfig, storageName), vars));
+    }
+
+    //only chosen storage get ${}, it up to use to write in cli which storage config should dbvault u se
+    private static StorageConfig pick(RawConfig raw, String requested) {
+        // if storage missing use empty map
+        Map<String, StorageConfig> all = raw.storages() == null ? Map.of() : raw.storages();
+        // if user write --storage s4, requested is s3, otherwise use defaultStorage
+        String name = requested != null ? requested : raw.defaultStorage();
+        // if only one configured storage and no default specified, Dbvault will select it
+        if (name == null && all.size() == 1) name = all.keySet().iterator().next();
+        if (name == null)
+            throw new DbVaultException("No storage chosen. Use --storage or set defaultStorage. Available: " + all.keySet());
+        // if user specifies non-existent name then throw exception
+        StorageConfig s = all.get(name);
+        if (s == null)
+            throw new DbVaultException("Unknown storage '" + name + "'. Available: " + all.keySet());
+        return s;
     }
 
     // loads and combine .env from readDotEnv and OS env variables into one
@@ -82,7 +107,7 @@ public final class ConfigLoader {
         return map;
     }
 
-    // Replaces ${NAME} and other placeholder in a value
+    // if value contains ${VARIABLE}, it replaces it with env var if not contains then simply returns original value
     private static String resolve(String value, Map<String, String> vars) {
         if (value == null) return null;
         return PLACEHOLDER.matcher(value).replaceAll(r -> {
@@ -95,16 +120,34 @@ public final class ConfigLoader {
         });
     }
 
-    // this time apply everything to hole configuration with resolve
-    private static DbVaultConfig resolveAll(DbVaultConfig c, Map<String, String> vars) {
-        // return object with actual values put in from yaml, port and type isn't put because they aren't string
-        DatabaseConfig d = c.database();
-        d = new DatabaseConfig(d.type(), resolve(d.host(), vars), d.port(), resolve(d.name(), vars),
+    // resolveAll divided into 2 parts for readability and single responsibility reasons
+    private static DatabaseConfig resolveDatabase(DatabaseConfig d, Map<String, String> vars) {
+        return new DatabaseConfig(d.type(), resolve(d.host(), vars), d.port(), resolve(d.name(), vars),
                 resolve(d.username(), vars), resolve(d.password(), vars), resolve(d.container(), vars));
-        // same thing as database but for storage
-        StorageConfig s = c.storage();
-        if (s != null) s = new StorageConfig(s.type(), resolve(s.path(), vars));
-        // return all 2 combined in dbVaultConfig
-        return new DbVaultConfig(d, s);
     }
+    private static StorageConfig resolveStorage(StorageConfig s, Map<String, String> vars) {
+        return new StorageConfig(s.type(), resolve(s.path(), vars),
+                resolve(s.endpoint(), vars), resolve(s.bucket(), vars), resolve(s.region(), vars),
+                resolve(s.accessKey(), vars), resolve(s.secretKey(), vars));
+    }
+    // old code used for one storage config back then using
+//    // this time apply everything to hole configuration with resolve
+//    private static DbVaultConfig resolveAll(DbVaultConfig c, Map<String, String> vars) {
+//        // return object with actual values put in from yaml, port and type isn't put because they aren't string
+//        DatabaseConfig d = c.database();
+//        d = new DatabaseConfig(d.type(), resolve(d.host(), vars), d.port(), resolve(d.name(), vars),
+//                resolve(d.username(), vars), resolve(d.password(), vars), resolve(d.container(), vars));
+//        // same thing as database but for storage, added S3 env vars
+//        StorageConfig s = c.storage();
+//        // non env ones (path, endpoint and etc.) return unchanged but env vars (secret and access keys) replaced with env values
+//        if (s != null) s = new StorageConfig(s.type(),
+//                resolve(s.path(), vars),
+//                resolve(s.endpoint(), vars),
+//                resolve(s.bucket(), vars),
+//                resolve(s.region(), vars),
+//                resolve(s.accessKey(), vars),
+//                resolve(s.secretKey(), vars));
+//        // return all 2 combined in dbVaultConfig
+//        return new DbVaultConfig(d, s);
+//    }
 }

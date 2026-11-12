@@ -23,10 +23,13 @@ public class ListCommand implements Callable<Integer> {
     @Option(names = {"-c", "--config"}, defaultValue = "dbvault.yml", description = "Path to config file")
     private Path configFilePath;
 
+    @Option(names = {"-s", "--storage"}, description = "Storage name from the config file, default: local")
+    private String storageName;
+
     @Override
     public Integer call() throws IOException {
         //load config and storage
-        DbVaultConfig config = ConfigLoader.load(configFilePath);
+        DbVaultConfig config = ConfigLoader.load(configFilePath, storageName);
         StorageBackend storage = StorageFactory.create(config.storage());
 
         // print table header for values

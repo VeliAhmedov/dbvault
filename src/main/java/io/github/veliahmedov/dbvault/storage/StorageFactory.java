@@ -14,6 +14,7 @@ public final class StorageFactory {
         if (config == null || config.type() == null) throw new DbVaultException("Invalid storage config");
         return switch (config.type()){
             case LOCAL -> new LocalStorageBackend(Path.of(config.path() == null ? "./backups" : config.path()));
+            case S3 -> new S3StorageBackend(config);
         };
     }
 }

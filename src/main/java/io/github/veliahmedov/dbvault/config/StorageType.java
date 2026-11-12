@@ -1,6 +1,7 @@
 package io.github.veliahmedov.dbvault.config;
 
-// where backups will be stored (in the future s3 will be supported)
+
 public enum StorageType {
-    LOCAL
+    LOCAL,           // local machine
+    S3               // S3 compatible service (in my case it is garage)
 }

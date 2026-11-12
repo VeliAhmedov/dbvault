@@ -9,6 +9,16 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
+  garage:
+    image: dxflrs/garage:v2.3.0
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
+    ports:
+      - "3900:3900"
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
 
 # S3 compatible object storage system for storing unstructured data's like photo, video, log and especially backups
 #  minio:
@@ -26,4 +36,6 @@ services:
 
 volumes:
   postgres_data:
+  garage_meta:
+  garage_data:
 #  minio_data:

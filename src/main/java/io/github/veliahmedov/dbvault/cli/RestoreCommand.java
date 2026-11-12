@@ -40,6 +40,10 @@ public class RestoreCommand implements Callable<Integer> {
     @Option(names = {"-c", "--config"}, defaultValue = "dbvault.yml", description = "Path to config file")
     private Path configFilePath;
 
+    // instead of hardcoding storage type like s3 or local, write just: dbvault backup -s s3 | dbvault backup --storage s3
+    @Option(names = {"-s", "--storage"}, description = "Storage name from the config file, default: local")
+    private String storageName;
+
     // allow selective restoration split by , like --table users, accounts
     @Option(names = "--table", split = ",", description = "Restore only this table (repeatable or comma-separated)")
     private List<String> tables = new ArrayList<>();
@@ -52,7 +56,7 @@ public class RestoreCommand implements Callable<Integer> {
     @Override
     public Integer call() throws  IOException {
         // load YAML config, create appropriate db adapter and storage backend
-        DbVaultConfig config = ConfigLoader.load(configFilePath);
+        DbVaultConfig config = ConfigLoader.load(configFilePath, storageName);
         DatabaseAdapter adapter = AdapterFactory.create(config.database());
         StorageBackend storage = StorageFactory.create(config.storage());
 
