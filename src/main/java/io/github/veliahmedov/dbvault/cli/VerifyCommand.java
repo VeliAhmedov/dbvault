@@ -3,6 +3,8 @@ package io.github.veliahmedov.dbvault.cli;
 import io.github.veliahmedov.dbvault.config.ConfigLoader;
 import io.github.veliahmedov.dbvault.config.DbVaultConfig;
 import io.github.veliahmedov.dbvault.exception.DbVaultException;
+import io.github.veliahmedov.dbvault.exception.ExitCode;
+import io.github.veliahmedov.dbvault.notification.Notifier;
 import io.github.veliahmedov.dbvault.storage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,8 +39,14 @@ public class VerifyCommand implements Callable<Integer>{
 
     @Override
     public Integer call() throws IOException {
-        //loading config and storage
+        //loading config and notifier
         DbVaultConfig config = ConfigLoader.load(configFilePath, storageName);
+        Notifier notifier = Notifier.from(config.notification());
+        // verification method call
+        return Operation.run("verify", backup, notifier, () -> verify(config));
+    }
+    // actual verification method moved from call()
+    private String verify(DbVaultConfig config) throws IOException {
         StorageBackend storage = StorageFactory.create(config.storage());
         //check whether backup exists and metadata exists (testdb.dump.gz.json)
         List<String> files = storage.list();
@@ -48,10 +56,12 @@ public class VerifyCommand implements Callable<Integer>{
         if (!files.contains(BackupMetadataStore.keyFor(backup))) {
             throw new DbVaultException("No checksum file for " + backup + " (cannot verify)");
         }
-        // Read metadata and compare sha256 hash sizes (not string), any modification can affect even of KB difference
+            // Read metadata and compare sha256 hash sizes (not string), any modification can affect even of KB difference
         BackupMetadata meta = BackupMetadataStore.read(storage, backup);
         if (storage.size(backup) != meta.sizeBytes()){
-            throw new DbVaultException("CORRUPTED: size differs from recorded size: " + backup);
+            // corruption explicitly use custom Exit codes
+            throw new DbVaultException("CORRUPTED: size differs from the recorded size: " + backup,
+                    ExitCode.CORRUPTED_BACKUP);
         }
         //download backup, calculate and compare actual checksum SHA-256 hash strings, main function to check corruption
         String actual;  // actual = hash calculated now, meta.sha256 = when backup created
@@ -59,9 +69,33 @@ public class VerifyCommand implements Callable<Integer>{
             actual = Checksums.sha256Of(in);             // sha256Of use DigestInputStream to calculate while reading
         }
         if (!actual.equals(meta.sha256())){
-            throw new DbVaultException("CORRUPTED: checksum mismatch: " + backup);
+            throw new DbVaultException("CORRUPTED: checksum mismatch: " + backup, ExitCode.CORRUPTED_BACKUP);
         }
-        LOG.info("Verified OK: {} | sha256: {}...", backup, meta.sha256());
-        return 0;
+        return "sha256 " + actual.substring(0, 12);
     }
 }
+/*
+ overall flow:
+
+ User runs: dbvault verify backup.dump.gz -s storage
+          ↓
+   VerifyCommand.call()
+          ↓
+ ConfigLoader, Notifier.from
+          ↓
+ Operation.run (logs start/finish/duration/status, sends notification, sets exit code)
+          ↓
+   VerifyCommand.verify()
+          ↓
+ StorageFactory, check the backup and its .json both exist
+          ↓
+ BackupMetadataStore.read (recorded size + SHA-256)
+          ↓
+ compare size                       -> mismatch: CORRUPTED (exit code 3)
+          ↓
+ StorageBackend.download -> Checksums.sha256Of (recompute the hash)
+          ↓
+ compare SHA-256                    -> mismatch: CORRUPTED (exit code 3)
+          ↓
+ match: "Verified OK" with a short hash
+ */

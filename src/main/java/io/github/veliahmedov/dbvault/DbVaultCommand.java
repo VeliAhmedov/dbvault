@@ -4,6 +4,8 @@ import io.github.veliahmedov.dbvault.cli.BackupCommand;
 import io.github.veliahmedov.dbvault.cli.ListCommand;
 import io.github.veliahmedov.dbvault.cli.RestoreCommand;
 import io.github.veliahmedov.dbvault.cli.VerifyCommand;
+import io.github.veliahmedov.dbvault.exception.DbVaultException;
+import io.github.veliahmedov.dbvault.exception.ExitCode;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
@@ -25,11 +27,14 @@ public class DbVaultCommand implements Runnable {
 
         CommandLine cli = new CommandLine(new DbVaultCommand());
 
-        //picocli handling exceptions (Error: Config file not found), ex = exception, cmd = command to execute, fullParseResult = info about cmd arguments
+        //Picocli handling exceptions (Error: Config file not found), ex = exception, cmd = command to execute, fullParseResult = info about cmd arguments
+        // exceptions converted into CLI exit codes for all operations here, central exception handler
         cli.setExecutionExceptionHandler((ex, cmd, fullParseResult) -> {
-            cmd.getErr().println("Error: "+ ex.getMessage());
-            return 1;
+            cmd.getErr().println("Error: " + ex.getMessage());
+            // all cli exc are dbvault so when exception thrown with code it travel back to here and read
+            return ex instanceof DbVaultException d ? d.exitCode().getCode() : ExitCode.GENERAL_ERROR.getCode();
         });
+
         //commandLine create command line processor, read @command, discover registers, execute args (commands)
         //exp: (java -jar dbvault.jar backup), identify backup via name and execute backup then 0-success, non-zero terminate
         System.exit(cli.execute(args));

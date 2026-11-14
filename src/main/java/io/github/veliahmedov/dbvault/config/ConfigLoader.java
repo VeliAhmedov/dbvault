@@ -17,8 +17,8 @@ import java.util.regex.Pattern;
 public final class ConfigLoader {
 
     // structure of yml file, Jackson reads, used map because number and name of storage (s3, local) can change in cli to be more flexible
-    // RawConfig(database,"local", Map.of("s3", localStorageConfig));, you can configure yourself in cmd
-    private record RawConfig(DatabaseConfig database, String defaultStorage, Map<String, StorageConfig> storages) {}
+    // RawConfig(database,"local", Map.of("s3", localStorageConfig));, you can configure yourself in cmd, notification for notify
+    private record RawConfig(DatabaseConfig database, String defaultStorage, Map<String, StorageConfig> storages, NotificationConfig notification) {}
 
     // location of .env files and placeholders inside yaml file
     private static final Path DOTENV = Path.of(".env");
@@ -51,7 +51,8 @@ public final class ConfigLoader {
         Map<String, String> vars = loadVariables();
         return new DbVaultConfig(
                 resolveDatabase(rawConfig.database, vars),
-                resolveStorage(pick(rawConfig, storageName), vars));
+                resolveStorage(pick(rawConfig, storageName), vars),
+                resolveNotifications(rawConfig.notification, vars));
     }
 
     //only chosen storage get ${}, it up to use to write in cli which storage config should dbvault u se
@@ -129,6 +130,10 @@ public final class ConfigLoader {
         return new StorageConfig(s.type(), resolve(s.path(), vars),
                 resolve(s.endpoint(), vars), resolve(s.bucket(), vars), resolve(s.region(), vars),
                 resolve(s.accessKey(), vars), resolve(s.secretKey(), vars));
+    }
+    //additional resolveNotifications for resolving notify params alongside db and storage
+    private static NotificationConfig resolveNotifications(NotificationConfig n, Map<String, String> vars) {
+        return n == null ? null : new NotificationConfig(resolve(n.webhook(), vars), resolve(n.notifyOn(), vars));
     }
     // old code used for one storage config back then using
 //    // this time apply everything to hole configuration with resolve

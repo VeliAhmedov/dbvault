@@ -5,6 +5,7 @@ import io.github.veliahmedov.dbvault.config.DbVaultConfig;
 import io.github.veliahmedov.dbvault.db.AdapterFactory;
 import io.github.veliahmedov.dbvault.db.DatabaseAdapter;
 import io.github.veliahmedov.dbvault.exception.DbVaultException;
+import io.github.veliahmedov.dbvault.notification.Notifier;
 import io.github.veliahmedov.dbvault.storage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,9 +44,17 @@ public class BackupCommand implements Callable<Integer> {
     private String storageName;
 
     //callable executed because need to return result as CLI command should return code for success (0) and failure (1)
+    // it now handles preparation and delegates execution to Operation
     @Override
-    public Integer call() {
+    public Integer call() throws IOException {
         DbVaultConfig config = ConfigLoader.load(configFilePath, storageName);  //loads dbvault.yml YAML to Object to it
+        Notifier notifier = Notifier.from(config.notification());
+        // backup is name of ops, config.database().name() is subjected DB, notifier is to send notification
+        // and () -> backup(config) is actual operation we do
+        return Operation.run("backup", config.database().name(), notifier, () -> backup(config));
+    }
+    // actual backup logic that returns info about backup as a string for cli
+    private String backup(DbVaultConfig config) throws IOException {
         DatabaseAdapter adapter = AdapterFactory.create(config.database());  // with general info it creates specialized adapter for given DB
         StorageBackend storage = StorageFactory.create(config.storage());    // with general info it creates specialized storage for given DB backup
 
@@ -53,9 +62,6 @@ public class BackupCommand implements Callable<Integer> {
         adapter.testConnection();
         //generate backup filename, log it
         String backupFilename = BackupNaming.fileName(config.database().name(), LocalDateTime.now());
-        LOG.info("Backup Started: using {} adapter for database '{}'", config.database().type(), config.database().name());
-        Instant start = Instant.now();
-
         //hashing engine for SHA-256 calculator
         MessageDigest digest = Checksums.sha256();
         //actual backup, compression ops and hash checksum
@@ -80,29 +86,42 @@ public class BackupCommand implements Callable<Integer> {
             String sha = Checksums.hex(digest);
             BackupMetadataStore.write(storage,
                     new BackupMetadata(backupFilename, config.database().name(), Instant.now().toString(), size, sha));
-
-            LOG.info("Backup finished: {} | {} bytes | {} ms | sha256 {}... | SUCCESS",
-                    backupFilename, size, Duration.between(start, Instant.now()).toMillis(), sha.substring(0, 12));
+            // this becomes detail for Operation.run() to show you in cli
+            // ops exe separated from ops logging and webhook (management), which why we separated
+            return backupFilename + " | " + size + " bytes | sha256 " + sha.substring(0, 12);
         } catch (IOException ioe) {
             throw new DbVaultException("Backup written but checksum file failed", ioe);
         }
-        return 0;
     }
 }
-// overall flow:
+/*
+ overall flow:
 
-// User run dbvault backup
-//          ↓
-//   BackupCommand.call()
-//          ↓
-// ConfigLoader (loads configuration),
-// AdapterFactory (create DB adapter),
-// StorageFactory (create storage backend),
-// BackupNaming (generate backup file name)
-//          ↓
-// DatabaseAdapter.backup(out)
-//          ↓
-//    GZIPOutputStream
-//          ↓
-//     StorageBackend
+ User runs: dbvault backup -s storage
+          ↓
+  BackupCommand.call()
+          ↓
+ ConfigLoader (YAML + .env, picks the storage), Notifier.from (webhook or none)
+          ↓
+ Operation.run (logs start/finish/duration/status, sends notification, sets exit code)
+          ↓
+   BackupCommand.backup()
+          ↓
+ AdapterFactory, StorageFactory, adapter.testConnection(), BackupNaming (file name)
+          ↓
+ pg_dump (custom format) via ProcessRunner.streamTo
+          ↓
+    GZIPOutputStream
+          ↓
+    DigestOutputStream (SHA-256 of the stored bytes)
+          ↓
+ StorageBackend.openWrite (local file or S3 multipart)
+          ↓
+ BackupMetadataStore.write (test.json: size + checksum)
+          ↓
+ summary returned to Operation (log line + webhook message)
+
+ in case of failure -> incomplete backup file is deleted, then the error goes to Operation for processing
+ */
+
 
