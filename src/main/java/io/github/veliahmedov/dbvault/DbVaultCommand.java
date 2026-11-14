@@ -24,9 +24,14 @@ import picocli.CommandLine.Command;
 )
 public class DbVaultCommand implements Runnable {
     static void main(String[] args) {
-
+        //commandLine create command line processor, read @command, discover registers, execute args (commands)
+        //exp: (java -jar dbvault.jar backup), identify backup via name and execute backup then 0-success, non-zero terminate
+        System.exit(create().execute(args));
+    }
+    // we extracted functions as method from main for testing, for both cli and tes to ise same cli config and same exception handler
+    // otherwise we would need to launch separate java process for every test
+    static CommandLine create(){
         CommandLine cli = new CommandLine(new DbVaultCommand());
-
         //Picocli handling exceptions (Error: Config file not found), ex = exception, cmd = command to execute, fullParseResult = info about cmd arguments
         // exceptions converted into CLI exit codes for all operations here, central exception handler
         cli.setExecutionExceptionHandler((ex, cmd, fullParseResult) -> {
@@ -35,9 +40,7 @@ public class DbVaultCommand implements Runnable {
             return ex instanceof DbVaultException d ? d.exitCode().getCode() : ExitCode.GENERAL_ERROR.getCode();
         });
 
-        //commandLine create command line processor, read @command, discover registers, execute args (commands)
-        //exp: (java -jar dbvault.jar backup), identify backup via name and execute backup then 0-success, non-zero terminate
-        System.exit(cli.execute(args));
+        return cli;
     }
     //uses runnable because no need for result as its purpose is display usage info
     //Picocli call run when root cmd is executed without child or help/version

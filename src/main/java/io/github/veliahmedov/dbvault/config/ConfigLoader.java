@@ -33,8 +33,14 @@ public final class ConfigLoader {
     //private no argument constructor to prevent creating instance of class (utility class)
     private ConfigLoader() {}
 
+    // we add 2 overload method for testing reasons as in original one env vars come from loadVariables which made machine dependent,
+    // instead we put vars as param to pass moc values instead, to keep both functionality and testability
+    public static DbVaultConfig load(Path file, String storageName){
+        return load(file, storageName, loadVariables());
+    }
+
     //load configuration from yaml to records as objects
-    public static DbVaultConfig load(Path file, String storageName) {
+     static DbVaultConfig load(Path file, String storageName, Map<String, String> vars) {
         if (!Files.exists(file)) {
             throw new DbVaultException("Config file does not exist: " + file);
         }
@@ -48,7 +54,6 @@ public final class ConfigLoader {
         if (rawConfig.database() == null || rawConfig.database().type() == null) {
             throw new DbVaultException("Config database or database type not found");
         }
-        Map<String, String> vars = loadVariables();
         return new DbVaultConfig(
                 resolveDatabase(rawConfig.database, vars),
                 resolveStorage(pick(rawConfig, storageName), vars),
@@ -135,24 +140,4 @@ public final class ConfigLoader {
     private static NotificationConfig resolveNotifications(NotificationConfig n, Map<String, String> vars) {
         return n == null ? null : new NotificationConfig(resolve(n.webhook(), vars), resolve(n.notifyOn(), vars));
     }
-    // old code used for one storage config back then using
-//    // this time apply everything to hole configuration with resolve
-//    private static DbVaultConfig resolveAll(DbVaultConfig c, Map<String, String> vars) {
-//        // return object with actual values put in from yaml, port and type isn't put because they aren't string
-//        DatabaseConfig d = c.database();
-//        d = new DatabaseConfig(d.type(), resolve(d.host(), vars), d.port(), resolve(d.name(), vars),
-//                resolve(d.username(), vars), resolve(d.password(), vars), resolve(d.container(), vars));
-//        // same thing as database but for storage, added S3 env vars
-//        StorageConfig s = c.storage();
-//        // non env ones (path, endpoint and etc.) return unchanged but env vars (secret and access keys) replaced with env values
-//        if (s != null) s = new StorageConfig(s.type(),
-//                resolve(s.path(), vars),
-//                resolve(s.endpoint(), vars),
-//                resolve(s.bucket(), vars),
-//                resolve(s.region(), vars),
-//                resolve(s.accessKey(), vars),
-//                resolve(s.secretKey(), vars));
-//        // return all 2 combined in dbVaultConfig
-//        return new DbVaultConfig(d, s);
-//    }
 }
