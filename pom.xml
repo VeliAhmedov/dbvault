@@ -6,7 +6,7 @@
 
     <groupId>io.github.veliahmedov</groupId>
     <artifactId>dbvault</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <packaging>jar</packaging>
 
     <properties>
@@ -87,6 +87,14 @@
             <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- 6. mockito to create mock objects for testing -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.23.0</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -124,6 +132,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.6.1</version>
+                <configuration>
+                    <argLine>-Xshare:off -javaagent:${org.mockito:mockito-core:jar}</argLine>
+                </configuration>
             </plugin>
             <!-- run integration tests during integration-test and verify phases, alongside testcontainers (postgreSQL)  -->
             <plugin>
@@ -136,6 +147,17 @@
                             <goal>integration-test</goal>
                             <goal>verify</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- first run of mockito prints self-attaching warning, this is used to load mockito as agent to silence it -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <goals><goal>properties</goal></goals>
                     </execution>
                 </executions>
             </plugin>

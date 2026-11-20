@@ -1,19 +1,37 @@
 # Copy to dbvault.yml and adjust. Values like ${DB_USERNAME} are read from
 # your environment or from a .env file in the folder where you run dbvault.
-# so don't put real values there
+# Don't put real secrets in this file.
 database:
-  type: postgres            # postgres | sqlite (sqlite planned)
+  type: postgres            # postgres (sqlite is planned)
   name: testdb
   username: ${DB_USERNAME}
   password: ${DB_PASSWORD}
 
   # Option A: run pg_dump/psql inside a Docker container
-  container: postgres
+  # (use the container name from 'docker ps', not the compose service name)
+  container: dbvault-postgres-1
 
   # Option B: use pg_dump/psql installed on this machine (remove 'container')
   # host: localhost
   # port: 5433
 
-storage:
-  type: local
-  path: ./backups
+# Storage used when you don't pass --storage (-s)
+defaultStorage: local
+
+# Pick one per run: dbvault backup -s s3
+storages:
+  local:
+    type: local
+    path: ./backups
+  s3:                       # any S3-compatible server (Garage, SeaweedFS, ...)
+    type: s3
+    endpoint: http://localhost:3900
+    bucket: dbvault-backups
+    region: garage          # must match the server's region setting
+    accessKey: ${S3_ACCESS_KEY}
+    secretKey: ${S3_SECRET_KEY}
+
+# Optional: remove this whole section to turn notifications off
+notification:
+  webhook: ${WEBHOOK_URL}
+  notifyOn: all             # all | failure

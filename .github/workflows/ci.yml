@@ -1,0 +1,46 @@
+name: CI - Build, test and security scan # name of workflow, displayed in actions tab
+
+# when workflow runs (on) -> when pushed to and pulled from main branch
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # manually start workflow from GitHub
+  workflow_dispatch:
+
+# workflow allowed to read data but not modify it (least privilege)
+permissions:
+  contents: read
+
+# what will be done (jobs) when pushed and pulled from main (on)
+jobs:
+  build:
+    # run all operations of jobs in ubuntu-latest VM to execute steps
+    runs-on: ubuntu-latest
+    steps:
+      # download repo into VM
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # 1st ops: some dependencies version can have vulnerabilities that we don't know, find them
+      - name: Scan dependencies with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs               # scan filesystem
+          scan-ref: .                 # scan repo's root dir
+          scanners: vuln              # check vulnerabilities
+          severity: HIGH,CRITICAL     # focus on high and critical ones
+          exit-code: '1'              # make step fail if found (1 is failure)
+
+      # 2nd ops: this is mainly used to cache maven dependencies between workflow runs to reduce build time for updates
+      - name: Set up Java 25 (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # 3rd ops: does run both unit and integration tests when pulled and pushed
+      - name: Build, unit tests and integration tests
+        run: mvn -B verify
